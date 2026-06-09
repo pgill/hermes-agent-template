@@ -45,7 +45,8 @@ Hermes Agent interacts entirely through messaging channels — there is no chat 
 2. Set the `ADMIN_PASSWORD` environment variable (or a random one will be generated and printed to deploy logs)
 3. Attach a **volume** mounted at `/data` (persists config, sessions, skills, GBrain state, and profile data across redeploys)
 4. Add any runtime secrets as Railway Variables. On every boot, the entrypoint refreshes `/data/.hermes/.env` from Railway Variables while preserving manual file-only values.
-5. Open your app URL — log in with username `admin` and your password
+5. Set `GBRAIN_SUPABASE_URL` to your Supabase transaction-pooler URL on Railway if you want the brain cloud-backed by default.
+6. Open your app URL — log in with username `admin` and your password
 
 ### 4. Configure in the Admin Dashboard
 

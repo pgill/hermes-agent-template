@@ -142,6 +142,8 @@ ENV_VARS = [
     ("GBRAIN_SUPABASE_URL",      "GBrain Supabase URL",      "tool",      True),
     ("GBRAIN_DATABASE_URL",      "GBrain database URL",      "tool",      True),
     ("GBRAIN_DIRECT_DATABASE_URL", "GBrain direct DB URL",    "tool",      True),
+    ("GBRAIN_MIGRATE_ON_BOOT",   "Run gbrain migrate on boot", "tool",     False),
+    ("GBRAIN_BOOT_CHECK",        "Run gbrain doctor on boot",   "tool",     False),
     ("ZEROENTROPY_API_KEY",      "ZeroEntropy",              "tool",      True),
     ("VOYAGE_API_KEY",           "Voyage",                   "tool",      True),
     ("VOICE_TOOLS_OPENAI_KEY",   "OpenAI (voice/TTS)",       "tool",      True),

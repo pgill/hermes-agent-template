@@ -810,7 +810,20 @@ def guard(request: Request) -> Response | None:
 
     - HTML navigation: 302 to /login?returnTo=<path>
     - API / XHR: 401 JSON (so the SPA's fetch() can surface it cleanly)
+
+    GBrain MCP/OAuth routes are intentionally exempt so public clients can
+    reach the loopback-proxied server without the Hermes admin cookie.
     """
+    public_passthrough = {
+        "/mcp",
+        "/token",
+        "/authorize",
+        "/register",
+        "/revoke",
+        "/.well-known/oauth-authorization-server",
+    }
+    if request.url.path in public_passthrough:
+        return None
     if _is_authenticated(request):
         return None
     accept = request.headers.get("accept", "").lower()

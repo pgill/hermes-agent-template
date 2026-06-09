@@ -1814,6 +1814,7 @@ routes = [
     # shared brain through this Railway app without exposing a second listener.
     Route("/mcp",                               _proxy_to_gbrain,     methods=ANY_METHOD),
     Route("/token",                             _proxy_to_gbrain,     methods=ANY_METHOD),
+    Route("/authorize",                         _proxy_to_gbrain,     methods=ANY_METHOD),
     Route("/.well-known/oauth-authorization-server", _proxy_to_gbrain, methods=ANY_METHOD),
     Route("/register",                          _proxy_to_gbrain,     methods=ANY_METHOD),
     Route("/revoke",                            _proxy_to_gbrain,     methods=ANY_METHOD),

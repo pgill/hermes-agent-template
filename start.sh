@@ -64,8 +64,20 @@ fi
 # process group so tini cleans it up on shutdown.
 if [ -n "${GBRAIN_DATABASE_URL:-}" ]; then
   export GBRAIN_HTTP_PORT="${GBRAIN_HTTP_PORT:-3001}"
-  if [ -x /data/.hermes/home/.bun/bin/bun ] && [ -x /data/.hermes/home/.bun/install/global/node_modules/gbrain/src/cli.ts ]; then
-    /data/.hermes/home/.bun/bin/bun /data/.hermes/home/.bun/install/global/node_modules/gbrain/src/cli.ts serve --http --bind 127.0.0.1 --port "${GBRAIN_HTTP_PORT}" >/data/.hermes/logs/gbrain-http.log 2>&1 &
+  export PATH="/opt/bun/bin:${PATH}"
+  GBRAIN_PUBLIC_URL="${GBRAIN_PUBLIC_URL:-}"
+  if [ -z "${GBRAIN_PUBLIC_URL}" ] && [ -n "${RAILWAY_PUBLIC_DOMAIN:-}" ]; then
+    GBRAIN_PUBLIC_URL="https://${RAILWAY_PUBLIC_DOMAIN}"
+  fi
+  if command -v gbrain >/dev/null 2>&1; then
+    args=(serve --http --bind 127.0.0.1 --port "${GBRAIN_HTTP_PORT}" --suppress-bootstrap-token)
+    if [ -n "${GBRAIN_PUBLIC_URL}" ]; then
+      args+=(--public-url "${GBRAIN_PUBLIC_URL}")
+    fi
+    echo "[startup] starting GBrain HTTP MCP server on 127.0.0.1:${GBRAIN_HTTP_PORT}" >&2
+    gbrain "${args[@]}" >/data/.hermes/logs/gbrain-http.log 2>&1 &
+  else
+    echo "[startup] WARNING: gbrain command not found; /mcp proxy will be unavailable" >&2
   fi
 fi
 

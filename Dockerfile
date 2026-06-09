@@ -9,6 +9,7 @@ FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 # `v2026.5.29.2`) and update the default below. Use `main` only if you accept
 # that every rebuild can pull arbitrary new upstream commits.
 ARG HERMES_REF=v2026.5.29.2
+ARG GBRAIN_REF=1eb430a
 
 # tini = tiny init that we run as PID 1. Without it, hermes's grandchild
 # processes (MCP stdio servers, git, bun, browser daemons spawned by tools)
@@ -46,6 +47,15 @@ RUN git clone --depth 1 --branch ${HERMES_REF} https://github.com/NousResearch/h
     npm install --silent --no-fund --no-audit --progress=false && \
     npm run build && \
     rm -rf /opt/hermes-agent/web /opt/hermes-agent/.git /root/.npm
+
+# Install Bun + GBrain into the immutable image. Do not rely on a previous
+# Railway volume having a Bun global install: fresh deploys and restored
+# volumes must be able to boot the GBrain HTTP MCP server deterministically.
+ENV BUN_INSTALL=/opt/bun
+ENV PATH=/opt/bun/bin:$PATH
+RUN curl -fsSL https://bun.sh/install | bash && \
+    bun install -g "github:garrytan/gbrain#${GBRAIN_REF}" && \
+    gbrain --version
 
 # Why pre-build ui-tui (and why we don't delete it after):
 # - The dashboard's embedded Chat tab spawns `node ui-tui/dist/entry.js`

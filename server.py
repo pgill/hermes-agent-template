@@ -76,6 +76,13 @@ HERMES_DASHBOARD_HOST = "127.0.0.1"
 HERMES_DASHBOARD_PORT = int(os.environ.get("HERMES_DASHBOARD_PORT", "9119"))
 HERMES_DASHBOARD_URL = f"http://{HERMES_DASHBOARD_HOST}:{HERMES_DASHBOARD_PORT}"
 
+# Shared GBrain HTTP MCP server — also runs on loopback and is proxied from the
+# public Railway app under /mcp. Keeping it local preserves the single public
+# edge while still making the same brain reachable to remote clients.
+GBRAIN_MCP_HOST = "127.0.0.1"
+GBRAIN_MCP_PORT = int(os.environ.get("GBRAIN_HTTP_PORT", "3001"))
+GBRAIN_MCP_URL = f"http://{GBRAIN_MCP_HOST}:{GBRAIN_MCP_PORT}"
+
 # Mirror dashboard-ref-only/auth_proxy.py: strip only `host` (httpx sets it)
 # and `transfer-encoding` (httpx recomputes it from the body). Keep everything
 # else — notably `authorization`, because the SPA uses Bearer tokens against
@@ -1517,6 +1524,41 @@ async def _proxy_to_dashboard(request: Request) -> Response:
     )
 
 
+async def _proxy_to_gbrain(request: Request) -> Response:
+    """Forward an authenticated request to the loopback GBrain HTTP server."""
+    client = get_http_client()
+    target = f"{GBRAIN_MCP_URL}{request.url.path}"
+    if request.url.query:
+        target = f"{target}?{request.url.query}"
+
+    req_headers = {
+        k: v for k, v in request.headers.items()
+        if k.lower() not in HOP_BY_HOP
+    }
+    body = await request.body()
+
+    try:
+        upstream = await client.request(
+            request.method,
+            target,
+            headers=req_headers,
+            content=body,
+        )
+    except (httpx.ConnectError, httpx.ConnectTimeout):
+        return JSONResponse({"error": "gbrain_unavailable"}, status_code=503)
+    except httpx.RequestError as e:
+        print(f"[proxy] gbrain upstream error for {request.method} {request.url.path}: {e}", flush=True)
+        return JSONResponse({"error": "gbrain_unavailable"}, status_code=502)
+
+    resp_headers = {
+        k: v for k, v in upstream.headers.items()
+        if k.lower() not in HOP_BY_HOP
+        and k.lower() not in ("content-encoding", "content-length")
+    }
+    content = upstream.content
+    return Response(content=content, status_code=upstream.status_code, headers=resp_headers)
+
+
 async def route_root(request: Request) -> Response:
     """GET /: first-visit smart redirect, otherwise proxy to the dashboard.
 
@@ -1754,6 +1796,14 @@ routes = [
     Route("/setup/api/oauth/xai/start",         api_oauth_xai_start,  methods=["POST"]),
     Route("/setup/api/oauth/xai/status",        api_oauth_xai_status),
     Route("/setup/api/oauth/xai",               api_oauth_xai_delete, methods=["DELETE"]),
+
+    # GBrain HTTP MCP proxy. Keep it explicit so public clients can reach the
+    # shared brain through this Railway app without exposing a second listener.
+    Route("/mcp",                               _proxy_to_gbrain,     methods=ANY_METHOD),
+    Route("/token",                             _proxy_to_gbrain,     methods=ANY_METHOD),
+    Route("/.well-known/oauth-authorization-server", _proxy_to_gbrain, methods=ANY_METHOD),
+    Route("/register",                          _proxy_to_gbrain,     methods=ANY_METHOD),
+    Route("/revoke",                            _proxy_to_gbrain,     methods=ANY_METHOD),
 
     # /setup/* typos return a real 404 — not a silent proxy fallthrough.
     Route("/setup/{path:path}",                 route_setup_404,     methods=ANY_METHOD),

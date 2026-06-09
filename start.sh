@@ -59,4 +59,14 @@ if [ -n "${GBRAIN_DATABASE_URL:-}" ] && [ "${GBRAIN_BOOT_CHECK:-1}" != "0" ] && 
   python /app/gbrain_bootstrap.py || true
 fi
 
+# Start the shared GBrain HTTP MCP server on loopback so the public Railway
+# app can proxy /mcp and the OAuth endpoints to it. Keep it in the same
+# process group so tini cleans it up on shutdown.
+if [ -n "${GBRAIN_DATABASE_URL:-}" ]; then
+  export GBRAIN_HTTP_PORT="${GBRAIN_HTTP_PORT:-3001}"
+  if [ -x /data/.hermes/home/.bun/bin/bun ] && [ -x /data/.hermes/home/.bun/install/global/node_modules/gbrain/src/cli.ts ]; then
+    /data/.hermes/home/.bun/bin/bun /data/.hermes/home/.bun/install/global/node_modules/gbrain/src/cli.ts serve --http --bind 127.0.0.1 --port "${GBRAIN_HTTP_PORT}" >/data/.hermes/logs/gbrain-http.log 2>&1 &
+  fi
+fi
+
 exec python /app/server.py

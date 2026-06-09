@@ -65,9 +65,10 @@ RUN uv pip install --system --no-cache -r /app/requirements.txt
 RUN mkdir -p /data/.hermes
 
 COPY server.py /app/server.py
+COPY sync_railway_env.py /app/sync_railway_env.py
 COPY templates/ /app/templates/
 COPY start.sh /app/start.sh
-RUN chmod +x /app/start.sh
+RUN chmod +x /app/start.sh /app/sync_railway_env.py
 
 ENV HOME=/data
 ENV HERMES_HOME=/data/.hermes

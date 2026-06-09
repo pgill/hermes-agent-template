@@ -43,8 +43,9 @@ Hermes Agent interacts entirely through messaging channels — there is no chat 
 
 1. Click the **Deploy on Railway** button above
 2. Set the `ADMIN_PASSWORD` environment variable (or a random one will be generated and printed to deploy logs)
-3. Attach a **volume** mounted at `/data` (persists config across redeploys)
-4. Open your app URL — log in with username `admin` and your password
+3. Attach a **volume** mounted at `/data` (persists config, sessions, skills, GBrain state, and profile data across redeploys)
+4. Add any runtime secrets as Railway Variables. On every boot, the entrypoint refreshes `/data/.hermes/.env` from Railway Variables while preserving manual file-only values.
+5. Open your app URL — log in with username `admin` and your password
 
 ### 4. Configure in the Admin Dashboard
 
@@ -125,8 +126,13 @@ The startup script also clears stale `gateway.pid` files for both the default pr
 | `HERMES_MANAGED_PROFILES` | *(empty)* | Optional comma-separated profile gateways to supervise in addition to `default`, e.g. `documenter,finance`. Also accepts `all` for discovery or JSON. |
 | `HERMES_AUTO_START_PROFILES` | `false` | If `true`, auto-discover every profile under `/data/.hermes/profiles/` that has a messaging channel configured. |
 | `HERMES_MANAGED_PROFILES_FILE` | `/data/.hermes/managed-profiles.json` | Optional JSON config file on the persistent volume for managed profile gateways. |
+| `GBRAIN_SUPABASE_URL` | *(empty)* | Optional GBrain Supabase/Postgres connection URL. Prefer Supabase **Transaction Pooler** URL on port `6543`; the startup bridge also writes it as `GBRAIN_DATABASE_URL` so GBrain uses Postgres instead of local PGLite. |
+| `GBRAIN_DATABASE_URL` | *(derived from `GBRAIN_SUPABASE_URL`)* | Canonical GBrain database URL override. Set directly only if you do not want to use `GBRAIN_SUPABASE_URL`. |
+| `GBRAIN_DIRECT_DATABASE_URL` | *(empty)* | Optional direct/session-pooler URL for GBrain migrations, DDL, and worker locks. Use Supabase **Session Pooler** URL on port `5432` if the host cannot reach the IPv6-only direct DB hostname. |
+| `ZEROENTROPY_API_KEY` | *(empty)* | Optional/recommended embedding provider key for GBrain. |
+| `GITHUB_TOKEN` | *(empty)* | Optional GitHub token for private repo access and higher API limits. |
 
-The default profile's LLM provider, model, channels, and tools are managed through the admin dashboard. Additional Hermes profiles keep their own `.env`, `config.yaml`, memory, skills, and gateway state under `/data/.hermes/profiles/<name>/`.
+The default profile's LLM provider, model, channels, and tools are managed through the admin dashboard or Railway Variables. On every boot, selected Railway Variables are written into `/data/.hermes/.env`; values removed from Railway are removed from the generated section, while manual/dashboard-only values are preserved. Additional Hermes profiles keep their own `.env`, `config.yaml`, memory, skills, and gateway state under `/data/.hermes/profiles/<name>/`.
 
 ## Supported Providers
 
@@ -154,7 +160,7 @@ Railway Container
 └── hermes dashboard — Native Hermes web dashboard, reverse-proxied by the server
 ```
 
-The admin server runs on `$PORT` and manages the Hermes gateway fleet as child processes. Default config is stored in `/data/.hermes/.env` and `/data/.hermes/config.yaml`; profile config lives under `/data/.hermes/profiles/<name>/`. Gateway stdout/stderr is captured into a ring buffer and streamed to the Logs panel.
+The admin server runs on `$PORT` and manages the Hermes gateway fleet as child processes. Default config is stored in `/data/.hermes/.env` and `/data/.hermes/config.yaml`; profile config lives under `/data/.hermes/profiles/<name>/`. The container entrypoint creates `/data/.hermes` on first boot, records `/data/.hermes/.initialized`, and refreshes runtime-managed `.env` values from Railway Variables on every boot before starting the server. Gateway stdout/stderr is captured into a ring buffer and streamed to the Logs panel.
 
 ## Running Locally
 

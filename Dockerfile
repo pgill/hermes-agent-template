@@ -82,8 +82,9 @@ COPY sync_railway_env.py /app/sync_railway_env.py
 COPY gbrain_bootstrap.py /app/gbrain_bootstrap.py
 COPY backup.py /app/backup.py
 COPY templates/ /app/templates/
+COPY scripts/ /app/scripts/
 COPY start.sh /app/start.sh
-RUN chmod +x /app/start.sh /app/sync_railway_env.py /app/gbrain_bootstrap.py /app/backup.py
+RUN chmod +x /app/start.sh /app/sync_railway_env.py /app/gbrain_bootstrap.py /app/backup.py /app/scripts/*.sh
 
 ENV HOME=/data
 ENV HERMES_HOME=/data/.hermes

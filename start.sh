@@ -47,6 +47,19 @@ if [ ! -f "${CONFIG_FILE}" ] && [ -f /opt/hermes-agent/cli-config.yaml.example ]
   cp /opt/hermes-agent/cli-config.yaml.example "${CONFIG_FILE}"
 fi
 
+# Seed bundled scripts to the persistent volume on first boot (or when new
+# scripts are added in a template upgrade). Preserves user edits: a script
+# is only copied if it doesn't already exist at the destination.
+if [ -d /app/scripts ]; then
+  for _script in /app/scripts/*.sh; do
+    _dest="${HERMES_HOME}/scripts/$(basename "${_script}")"
+    if [ ! -f "${_dest}" ]; then
+      cp "${_script}" "${_dest}"
+      chmod +x "${_dest}"
+    fi
+  done
+fi
+
 touch "${ENV_FILE}"
 chmod 600 "${ENV_FILE}" || true
 

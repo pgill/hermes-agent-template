@@ -5,7 +5,7 @@
 # Delivery: stdout from a no_agent cron is delivered to the user's home channel
 # by Hermes automatically — no bot token or chat ID wiring needed in this script.
 #
-# Required Railway Variable: RAILWAY_API_TOKEN (workspace-scoped token from
+# Required Railway Variable: RAILWAY_TOKEN (workspace-scoped token from
 # railway.com/account/tokens). RAILWAY_SERVICE_ID and RAILWAY_ENVIRONMENT_ID
 # are injected automatically by Railway — no manual configuration needed.
 #
@@ -21,8 +21,8 @@ if ! echo "$VERSION_OUTPUT" | grep -q "Update available"; then
     exit 0
 fi
 
-if [ -z "${RAILWAY_API_TOKEN:-}" ]; then
-    echo "⚠️ Hermes update available but RAILWAY_API_TOKEN is not set."
+if [ -z "${RAILWAY_TOKEN:-}" ]; then
+    echo "⚠️ Hermes update available but RAILWAY_TOKEN is not set."
     echo "Add it in Railway → Variables (workspace-scoped token from railway.com/account/tokens)."
     echo ""
     echo "$VERSION_OUTPUT"
@@ -45,7 +45,7 @@ UPDATE_LINE=$(echo "$VERSION_OUTPUT" | grep "Update available")
 HTTP_CODE=$(curl -s -o /tmp/railway-redeploy-response.json -w "%{http_code}" \
     -X POST https://backboard.railway.com/graphql/v2 \
     -H "Content-Type: application/json" \
-    -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
+    -H "Authorization: Bearer $RAILWAY_TOKEN" \
     -d "{\"query\":\"mutation { serviceInstanceRedeploy(serviceId: \\\"$RAILWAY_SERVICE_ID\\\", environmentId: \\\"$RAILWAY_ENVIRONMENT_ID\\\") }\"}")
 
 RESPONSE=$(cat /tmp/railway-redeploy-response.json 2>/dev/null || echo "{}")
@@ -54,7 +54,7 @@ if [ "$HTTP_CODE" != "200" ] || echo "$RESPONSE" | grep -q '"errors"'; then
     echo "⚠️ Hermes update available but redeploy failed (HTTP $HTTP_CODE)."
     echo "$CURRENT"
     echo "$UPDATE_LINE"
-    echo "Check your RAILWAY_API_TOKEN in Railway → Variables."
+    echo "Check your RAILWAY_TOKEN in Railway → Variables."
     exit 1
 fi
 

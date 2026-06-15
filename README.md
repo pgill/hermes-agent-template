@@ -132,6 +132,10 @@ The startup script also clears stale `gateway.pid` files for both the default pr
 | `GBRAIN_DIRECT_DATABASE_URL` | *(empty)* | Optional direct/session-pooler URL for GBrain migrations, DDL, and worker locks. Use Supabase **Session Pooler** URL on port `5432` if the host cannot reach the IPv6-only direct DB hostname. |
 | `ZEROENTROPY_API_KEY` | *(empty)* | Optional/recommended embedding provider key for GBrain. |
 | `GITHUB_TOKEN` | *(empty)* | Optional GitHub token for private repo access and higher API limits. |
+| `HERMES_REF` | *(pinned in Dockerfile)* | Hermes Agent version to install (any upstream git tag/branch). Set this Railway variable to override the Dockerfile default without editing code — see [Updating Hermes](#updating-hermes). |
+| `BACKUP_GITHUB_TOKEN` | *(required)* | GitHub token (repo scope) for hourly workspace backups. The backup repo is created automatically on first boot; secrets are excluded via `.gitignore` and never committed. |
+| `BACKUP_REPO` | `<user>/hermes-backup` | Target repo for workspace backups (`owner/name`). Created as private if absent. |
+| `BACKUP_TELEGRAM_CHAT_ID` | *(empty)* | Optional Telegram chat ID for stale-backup alerts (>25h without a successful push). Requires `TELEGRAM_BOT_TOKEN` in the gateway env. |
 
 The default profile's LLM provider, model, channels, and tools are managed through the admin dashboard or Railway Variables. On every boot, selected Railway Variables are written into `/data/.hermes/.env`; values removed from Railway are removed from the generated section, while manual/dashboard-only values are preserved. Additional Hermes profiles keep their own `.env`, `config.yaml`, memory, skills, and gateway state under `/data/.hermes/profiles/<name>/`.
 
@@ -162,6 +166,15 @@ Railway Container
 ```
 
 The admin server runs on `$PORT` and manages the Hermes gateway fleet as child processes. Default config is stored in `/data/.hermes/.env` and `/data/.hermes/config.yaml`; profile config lives under `/data/.hermes/profiles/<name>/`. The container entrypoint creates `/data/.hermes` on first boot, records `/data/.hermes/.initialized`, and refreshes runtime-managed `.env` values from Railway Variables on every boot before starting the server. Gateway stdout/stderr is captured into a ring buffer and streamed to the Logs panel.
+
+## Updating Hermes
+
+This template pins a specific Hermes Agent release in the `Dockerfile` (`ARG HERMES_REF`, currently `v2026.6.5`). To upgrade:
+
+- **Recommended:** set a `HERMES_REF` service variable in Railway to any upstream [release tag](https://github.com/NousResearch/hermes-agent/releases) (e.g. `v2026.6.6`), then redeploy. It's passed as a Docker build arg and overrides the Dockerfile default — no code change needed.
+- **Or** bump `ARG HERMES_REF` in the `Dockerfile` and redeploy.
+
+The "Update" button inside the Hermes dashboard is a **no-op on Railway** (it detects a container install and refuses). The image is immutable — bump `HERMES_REF` and redeploy instead. When jumping releases, re-check that the Dockerfile's install extras still match upstream's `pyproject.toml`.
 
 ## Running Locally
 

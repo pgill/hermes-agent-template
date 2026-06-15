@@ -12,6 +12,15 @@ mkdir -p "${HERMES_HOME}"/cron "${HERMES_HOME}"/sessions "${HERMES_HOME}"/logs \
          "${HERMES_HOME}"/workspace "${HERMES_HOME}"/skins "${HERMES_HOME}"/plans \
          "${HERMES_HOME}"/home "${HERMES_HOME}"/scripts "${HERMES_HOME}"/profiles
 
+# Stamp the install method as "docker" so hermes treats this as an immutable
+# container image, not a pip checkout. hermes's detect_install_method() reads
+# $HERMES_HOME/.install_method FIRST. Without this stamp the template falls
+# through to "pip" (the Dockerfile strips /opt/hermes-agent/.git) and the
+# dashboard's "Update Hermes" button runs a real pip-upgrade inside the running
+# container — ephemeral and desyncs Python package from pre-built UI bundles.
+# Stamped unconditionally each boot so it stays correct and self-heals.
+printf 'docker\n' > "${HERMES_HOME}/.install_method"
+
 # Refresh runtime-managed env vars from Railway on every boot.
 if [ -f /app/sync_railway_env.py ]; then
   python /app/sync_railway_env.py
@@ -80,5 +89,12 @@ if [ -n "${GBRAIN_DATABASE_URL:-}" ]; then
     echo "[startup] WARNING: gbrain command not found; /mcp proxy will be unavailable" >&2
   fi
 fi
+
+# Start the GitHub workspace backup daemon. Backs up skills, memories, config,
+# and hooks to a private GitHub repo hourly. Required — BACKUP_GITHUB_TOKEN
+# must be set. Runs independently of server.py so a backup error never takes
+# down the gateway.
+python /app/backup.py >>"${HERMES_HOME}/logs/backup.log" 2>&1 &
+echo "[startup] backup daemon started (pid $!)" >&2
 
 exec python /app/server.py

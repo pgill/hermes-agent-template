@@ -936,6 +936,19 @@ async def logout(request: Request) -> Response:
 
 
 # ── Gateway manager ───────────────────────────────────────────────────────────
+# Auto-respawn tuning. When the gateway exits without us asking it to — an
+# in-band `/restart` (inside a container hermes exits 75 expecting a supervisor
+# to bring it back; it takes the exit-75 path, NOT a detached self-restart,
+# when /run/.containerenv or /.dockerenv exists), a crash, or an OOM kill —
+# server.py is that supervisor and must restart it. Nothing else will, and
+# /health stays 200, so the bot would otherwise sit silently dead.
+# A crash-loop guard stops us hammering a gateway that genuinely can't stay up.
+RESPAWN_WINDOW_S   = 120     # rolling window (s) for counting unexpected exits
+RESPAWN_MAX_IN_WIN = 5       # give up auto-restart after this many exits in window
+RESPAWN_BASE_DELAY = 2.0     # first backoff (seconds)
+RESPAWN_MAX_DELAY  = 30.0    # backoff cap
+
+
 class Gateway:
     def __init__(
         self,
@@ -951,6 +964,11 @@ class Gateway:
         self.shared_logs = shared_logs
         self.started_at: float | None = None
         self.restarts = 0
+        # True while a deliberate stop()/restart()/reset is in flight so the
+        # exiting process's _drain() doesn't fire an auto-respawn that races.
+        self._stopping = False
+        # Monotonic timestamps of recent unexpected exits (crash-loop guard).
+        self._recent_exits: list[float] = []
 
     @property
     def home(self) -> Path:
@@ -972,10 +990,16 @@ class Gateway:
             return ["hermes", "gateway", "run"]
         return ["hermes", "-p", self.profile, "gateway", "run"]
 
-    async def start(self):
+    async def start(self, *, reset_budget: bool = True):
         if self.proc and self.proc.returncode is None:
             return
+        # A manual Start/Restart grants a fresh crash-loop budget; the
+        # auto-respawn path passes reset_budget=False so repeated crashes keep
+        # accumulating toward the give-up threshold.
+        if reset_budget:
+            self._recent_exits.clear()
         self.state = "starting"
+        self._stopping = False
         try:
             # .env values take priority over Railway env vars. For profile
             # gateways we still keep HERMES_HOME pointed at the root Hermes home
@@ -1000,12 +1024,13 @@ class Gateway:
             self.state = "running"
             self.started_at = time.time()
             self._log(f"spawned pid={self.proc.pid}")
-            asyncio.create_task(self._drain())
+            asyncio.create_task(self._drain(self.proc))
         except Exception as e:
             self.state = "error"
             self._log(f"[error] Failed to start: {e}")
 
     async def stop(self):
+        self._stopping = True
         if not self.proc or self.proc.returncode is not None:
             self.state = "stopped"
             return
@@ -1024,22 +1049,67 @@ class Gateway:
         self.restarts += 1
         await self.start()
 
-    async def _drain(self):
-        assert self.proc and self.proc.stdout
-        async for raw in self.proc.stdout:
+    async def _drain(self, proc: asyncio.subprocess.Process):
+        assert proc.stdout
+        async for raw in proc.stdout:
             line = ANSI_ESCAPE.sub("", raw.decode(errors="replace").rstrip())
             self._log(line)
-        if self.state == "running":
-            self.state = "error"
-            self._log(f"[error] Gateway exited (code {self.proc.returncode}); restarting in 5s")
-            asyncio.create_task(self._restart_after_exit())
-
-    async def _restart_after_exit(self):
-        await asyncio.sleep(5)
-        if self.state != "error":
+        rc = proc.returncode
+        # Ignore the drain of a process we've already replaced (e.g. via restart()).
+        if proc is not self.proc:
             return
+        # A deliberate stop()/restart()/reset owns its own lifecycle — don't respawn.
+        if self._stopping:
+            return
+        # Unexpected exit: in-band `/restart` (exit 75), a crash, or an OOM kill.
+        # On Railway nothing else brings the gateway back, so we supervise it.
+        self.state = "error"
+        self._log(f"exited (code {rc}) — supervising restart")
+        asyncio.create_task(self._supervise_respawn(proc.pid))
+
+    async def _supervise_respawn(self, dead_pid: int | None):
+        now = time.monotonic()
+        self._recent_exits = [t for t in self._recent_exits if now - t < RESPAWN_WINDOW_S]
+        self._recent_exits.append(now)
+        if len(self._recent_exits) > RESPAWN_MAX_IN_WIN:
+            self.state = "crashed"
+            self._log(
+                f"crash-looping ({len(self._recent_exits)} exits in {RESPAWN_WINDOW_S}s)"
+                " — giving up auto-restart. Fix provider/model in admin UI, then Start/Restart."
+            )
+            return
+        delay = min(RESPAWN_BASE_DELAY * 2 ** (len(self._recent_exits) - 1), RESPAWN_MAX_DELAY)
+        self._log(f"restarting in {int(delay)}s (attempt {len(self._recent_exits)})")
+        await asyncio.sleep(delay)
+        # Re-check after backoff sleep: a Stop, Reset, or shutdown issued during
+        # the wait must win over the respawn.
+        if self._stopping:
+            self._log("restart cancelled (stopped/reconfigured)")
+            return
+        if self.proc and self.proc.returncode is None:
+            return  # a manual Start already brought a live gateway back
+        if not is_config_complete():
+            self.state = "stopped"
+            self._log("restart skipped — provider/model not configured")
+            return
+        self._clear_stale_pidfile(dead_pid)
         self.restarts += 1
-        await self.start()
+        await self.start(reset_budget=False)
+
+    def _clear_stale_pidfile(self, dead_pid: int | None) -> None:
+        if dead_pid is None:
+            return
+        pid_file = self.home / "gateway.pid"
+        try:
+            rec = json.loads(pid_file.read_text())
+        except Exception:
+            return
+        if rec.get("pid") == dead_pid:
+            try:
+                pid_file.unlink()
+                self._log(f"cleared stale pid file (pid {dead_pid})")
+            except OSError:
+                pass
 
     def status(self) -> dict:
         uptime = int(time.time() - self.started_at) if self.started_at and self.state == "running" else None
@@ -1178,12 +1248,13 @@ class Dashboard:
                 # hermes to trust that dist and skip its npm build check,
                 # which would otherwise add ~30s to first startup (hermes >= v2026.5.16).
                 "--skip-build",
-                # --tui exposes /api/pty + /api/ws + /api/events so the
-                # dashboard's embedded Chat tab works end-to-end. Requires
-                # hermes >= v2026.4.23 — older releases exit immediately
-                # with "unrecognized arguments: --tui". The Dockerfile
-                # pre-builds ui-tui/dist/ so PTY spawn is instant.
-                "--tui",
+                # NOTE: the embedded Chat tab (/api/pty + /api/ws + /api/events)
+                # is unconditionally enabled as of hermes v2026.6.5 — the old
+                # `--tui` flag was REMOVED from the dashboard subcommand. Passing
+                # it now aborts startup with "unrecognized arguments: --tui",
+                # which kills this subprocess and 503s the reverse proxy. The
+                # Dockerfile still pre-builds ui-tui/dist/ (via HERMES_TUI_DIR)
+                # so the PTY child spawns instantly on first chat connect.
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
             )

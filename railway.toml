@@ -8,8 +8,3 @@ healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 10
-internalPort = 8080
-
-[[volumes]]
-name = "hermes-agent-volume"
-mountPath = "/data"

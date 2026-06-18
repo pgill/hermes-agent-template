@@ -9,13 +9,14 @@ Replace this file with your own skill prompt. The `name` in the frontmatter must
 match the directory name. The `description` is shown when users run `/skills`.
 
 To add more skills, create additional directories under `skills/` in the template
-repo, each containing a `SKILL.md`. They are seeded on first boot and user edits
-are never overwritten on redeploy.
+repo, each containing a `SKILL.md`. SKILL.md is re-rendered on every boot from
+the template source; scripts and reference files are copy-if-not-exists.
 
 ## Personalisation placeholders
 
-Use `${HERMES_OWNER_NAME}` or `${HERMES_EA_NAME}` anywhere in this file to insert
-the owner's or EA's name at deploy time. Set the corresponding Railway Variable
-and the value is substituted when the skill is first written to the volume.
+Use `{OWNER_NAME}` or `{EA_NAME}` anywhere in this file. They are substituted
+at boot time from the `HERMES_OWNER_NAME` / `HERMES_EA_NAME` Railway Variables.
+If a variable isn't set yet, the placeholder is kept verbatim — so you can set
+(or change) the variables any time and the next redeploy picks them up. No race.
 
-Example: "Never act without ${HERMES_OWNER_NAME}'s explicit approval."
+Example: "Never act without {OWNER_NAME}'s explicit approval."

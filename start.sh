@@ -60,21 +60,40 @@ if [ -d /app/scripts ]; then
   done
 fi
 
-# Seed bundled skills to the persistent volume. Each skill is a directory
-# containing a SKILL.md file. Placeholders like ${HERMES_OWNER_NAME} in
-# SKILL.md are substituted from env vars at copy time. Preserves user edits:
-# a skill is only copied if it doesn't already exist at the destination.
+# Seed bundled skills to the persistent volume on every boot.
+#
+# SKILL.md is always re-rendered from the template source so {OWNER_NAME} and
+# {EA_NAME} reflect the current HERMES_OWNER_NAME / HERMES_EA_NAME env vars.
+# This means the vars can be set or updated any time (e.g. via Railway API
+# after first boot) and take effect on the next redeploy — no race condition.
+# If a var is unset the placeholder is preserved verbatim, matching how the
+# course app's personalize.ts works (store the token, fill at render time).
+#
+# All other files (scripts, references) are copy-if-not-exists so user edits
+# to those files survive redeploys.
 if [ -d /app/skills ]; then
   for _skill_dir in /app/skills/*/; do
     _skill_name="$(basename "${_skill_dir}")"
     _dest_dir="${HERMES_HOME}/skills/${_skill_name}"
-    if [ ! -d "${_dest_dir}" ]; then
-      mkdir -p "${_dest_dir}"
-      if [ -f "${_skill_dir}SKILL.md" ]; then
-        envsubst '${HERMES_OWNER_NAME}${HERMES_EA_NAME}' \
-          < "${_skill_dir}SKILL.md" > "${_dest_dir}/SKILL.md"
-      fi
+    mkdir -p "${_dest_dir}"
+    if [ -f "${_skill_dir}SKILL.md" ]; then
+      python3 -c "
+import os, sys
+s = sys.stdin.read()
+s = s.replace('{OWNER_NAME}', os.environ.get('HERMES_OWNER_NAME', '{OWNER_NAME}'))
+s = s.replace('{EA_NAME}', os.environ.get('HERMES_EA_NAME', '{EA_NAME}'))
+sys.stdout.write(s)
+" < "${_skill_dir}SKILL.md" > "${_dest_dir}/SKILL.md"
     fi
+    find "${_skill_dir}" -mindepth 1 -not -name "SKILL.md" | while read -r _src; do
+      _rel="${_src#${_skill_dir}}"
+      _dest="${_dest_dir}/${_rel}"
+      if [ -d "${_src}" ]; then
+        mkdir -p "${_dest}"
+      elif [ ! -f "${_dest}" ]; then
+        cp "${_src}" "${_dest}"
+      fi
+    done
   done
 fi
 

@@ -60,6 +60,24 @@ if [ -d /app/scripts ]; then
   done
 fi
 
+# Seed bundled skills to the persistent volume. Each skill is a directory
+# containing a SKILL.md file. Placeholders like ${HERMES_OWNER_NAME} in
+# SKILL.md are substituted from env vars at copy time. Preserves user edits:
+# a skill is only copied if it doesn't already exist at the destination.
+if [ -d /app/skills ]; then
+  for _skill_dir in /app/skills/*/; do
+    _skill_name="$(basename "${_skill_dir}")"
+    _dest_dir="${HERMES_HOME}/skills/${_skill_name}"
+    if [ ! -d "${_dest_dir}" ]; then
+      mkdir -p "${_dest_dir}"
+      if [ -f "${_skill_dir}SKILL.md" ]; then
+        envsubst '${HERMES_OWNER_NAME}${HERMES_EA_NAME}' \
+          < "${_skill_dir}SKILL.md" > "${_dest_dir}/SKILL.md"
+      fi
+    fi
+  done
+fi
+
 touch "${ENV_FILE}"
 chmod 600 "${ENV_FILE}" || true
 

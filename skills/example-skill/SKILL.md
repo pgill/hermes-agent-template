@@ -14,9 +14,9 @@ the template source; scripts and reference files are copy-if-not-exists.
 
 ## Personalisation placeholders
 
-Use `{OWNER_NAME}` or `{EA_NAME}` anywhere in this file. They are substituted
-at boot time from the `HERMES_OWNER_NAME` / `HERMES_EA_NAME` Railway Variables.
+Use `{YOUR_NAME}` or `{EA_NAME}` anywhere in this file. They are substituted
+at boot time from the `HERMES_YOUR_NAME` / `HERMES_EA_NAME` Railway Variables.
 If a variable isn't set yet, the placeholder is kept verbatim — so you can set
 (or change) the variables any time and the next redeploy picks them up. No race.
 
-Example: "Never act without {OWNER_NAME}'s explicit approval."
+Example: "Never act without {YOUR_NAME}'s explicit approval."

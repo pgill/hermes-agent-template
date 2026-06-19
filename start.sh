@@ -62,8 +62,8 @@ fi
 
 # Seed bundled skills to the persistent volume on every boot.
 #
-# SKILL.md is always re-rendered from the template source so {OWNER_NAME} and
-# {EA_NAME} reflect the current HERMES_OWNER_NAME / HERMES_EA_NAME env vars.
+# SKILL.md is always re-rendered from the template source so {YOUR_NAME} and
+# {EA_NAME} reflect the current HERMES_YOUR_NAME / HERMES_EA_NAME env vars.
 # This means the vars can be set or updated any time (e.g. via Railway API
 # after first boot) and take effect on the next redeploy — no race condition.
 # If a var is unset the placeholder is preserved verbatim, matching how the
@@ -80,7 +80,7 @@ if [ -d /app/skills ]; then
       python3 -c "
 import os, sys
 s = sys.stdin.read()
-s = s.replace('{OWNER_NAME}', os.environ.get('HERMES_OWNER_NAME', '{OWNER_NAME}'))
+s = s.replace('{YOUR_NAME}', os.environ.get('HERMES_YOUR_NAME', '{YOUR_NAME}'))
 s = s.replace('{EA_NAME}', os.environ.get('HERMES_EA_NAME', '{EA_NAME}'))
 sys.stdout.write(s)
 " < "${_skill_dir}SKILL.md" > "${_dest_dir}/SKILL.md"

@@ -83,6 +83,7 @@ COPY gbrain_bootstrap.py /app/gbrain_bootstrap.py
 COPY backup.py /app/backup.py
 COPY templates/ /app/templates/
 COPY scripts/ /app/scripts/
+COPY skills/ /app/skills/
 COPY start.sh /app/start.sh
 RUN chmod +x /app/start.sh /app/sync_railway_env.py /app/gbrain_bootstrap.py /app/backup.py /app/scripts/*.sh
 

@@ -60,54 +60,6 @@ if [ -d /app/scripts ]; then
   done
 fi
 
-# Seed bundled skills to the persistent volume on every boot.
-#
-# SKILL.md is always re-rendered from the template source so {YOUR_NAME} and
-# {EA_NAME} reflect the current HERMES_YOUR_NAME / HERMES_EA_NAME env vars.
-# This means the vars can be set or updated any time (e.g. via Railway API
-# after first boot) and take effect on the next redeploy — no race condition.
-# If a var is unset the placeholder is preserved verbatim, matching how the
-# course app's personalize.ts works (store the token, fill at render time).
-#
-# All other files (scripts, references) are copy-if-not-exists so user edits
-# to those files survive redeploys.
-if [ -d /app/skills ]; then
-  _manifest="${HERMES_HOME}/skills/.bundled_manifest"
-  for _skill_dir in /app/skills/*/; do
-    _skill_name="$(basename "${_skill_dir}")"
-    _dest_dir="${HERMES_HOME}/skills/${_skill_name}"
-    mkdir -p "${_dest_dir}"
-    if [ -f "${_skill_dir}SKILL.md" ]; then
-      python3 -c "
-import os, sys
-s = sys.stdin.read()
-s = s.replace('{YOUR_NAME}', os.environ.get('HERMES_YOUR_NAME', '{YOUR_NAME}'))
-s = s.replace('{EA_NAME}', os.environ.get('HERMES_EA_NAME', '{EA_NAME}'))
-sys.stdout.write(s)
-" < "${_skill_dir}SKILL.md" > "${_dest_dir}/SKILL.md"
-      # Register (or refresh) the skill in Hermes's bundled manifest so the
-      # agent's skill registry reflects the seeded files. The manifest format
-      # is "skill-name:md5hash" — one entry per line. We rewrite the manifest
-      # without the old entry for this skill, then append the fresh hash so it
-      # always matches the rendered SKILL.md the agent will actually load.
-      if [ -f "${_manifest}" ]; then
-        _hash=$(python3 -c "import hashlib; print(hashlib.md5(open('${_dest_dir}/SKILL.md','rb').read()).hexdigest())")
-        { grep -v "^${_skill_name}:" "${_manifest}" || true; printf '%s:%s\n' "${_skill_name}" "${_hash}"; } > "${_manifest}.tmp"
-        mv "${_manifest}.tmp" "${_manifest}"
-      fi
-    fi
-    find "${_skill_dir}" -mindepth 1 -not -name "SKILL.md" | while read -r _src; do
-      _rel="${_src#${_skill_dir}}"
-      _dest="${_dest_dir}/${_rel}"
-      if [ -d "${_src}" ]; then
-        mkdir -p "${_dest}"
-      elif [ ! -f "${_dest}" ]; then
-        cp "${_src}" "${_dest}"
-      fi
-    done
-  done
-fi
-
 touch "${ENV_FILE}"
 chmod 600 "${ENV_FILE}" || true
 

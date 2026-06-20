@@ -8,12 +8,3 @@ healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 10
-
-# ── Configure variables ───────────────────────────────────────────────────────
-# These are declared as Required (no default) in the Railway template settings
-# so students fill them in during the deploy Configure step.
-# They drive {YOUR_NAME} / {EA_NAME} substitution in bundled skill prompts.
-# RAILWAY_TOKEN is intentionally absent here — added by the student in Ch 6/7.
-[variables]
-HERMES_YOUR_NAME = { description = "Your first name — your agent will call you this (e.g. Deep)", required = true }
-HERMES_EA_NAME = { description = "Your assistant's name (e.g. Aria, Rey)", required = true }

@@ -72,6 +72,7 @@ fi
 # All other files (scripts, references) are copy-if-not-exists so user edits
 # to those files survive redeploys.
 if [ -d /app/skills ]; then
+  _manifest="${HERMES_HOME}/skills/.bundled_manifest"
   for _skill_dir in /app/skills/*/; do
     _skill_name="$(basename "${_skill_dir}")"
     _dest_dir="${HERMES_HOME}/skills/${_skill_name}"
@@ -84,6 +85,16 @@ s = s.replace('{YOUR_NAME}', os.environ.get('HERMES_YOUR_NAME', '{YOUR_NAME}'))
 s = s.replace('{EA_NAME}', os.environ.get('HERMES_EA_NAME', '{EA_NAME}'))
 sys.stdout.write(s)
 " < "${_skill_dir}SKILL.md" > "${_dest_dir}/SKILL.md"
+      # Register (or refresh) the skill in Hermes's bundled manifest so the
+      # agent's skill registry reflects the seeded files. The manifest format
+      # is "skill-name:md5hash" — one entry per line. We rewrite the manifest
+      # without the old entry for this skill, then append the fresh hash so it
+      # always matches the rendered SKILL.md the agent will actually load.
+      if [ -f "${_manifest}" ]; then
+        _hash=$(python3 -c "import hashlib; print(hashlib.md5(open('${_dest_dir}/SKILL.md','rb').read()).hexdigest())")
+        { grep -v "^${_skill_name}:" "${_manifest}" || true; printf '%s:%s\n' "${_skill_name}" "${_hash}"; } > "${_manifest}.tmp"
+        mv "${_manifest}.tmp" "${_manifest}"
+      fi
     fi
     find "${_skill_dir}" -mindepth 1 -not -name "SKILL.md" | while read -r _src; do
       _rel="${_src#${_skill_dir}}"

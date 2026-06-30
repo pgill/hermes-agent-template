@@ -121,6 +121,15 @@ def _git_ok(*args: str) -> str:
     return out
 
 
+def _configure_git() -> None:
+    """Set git identity and branch defaults — must run every boot, not just on first bootstrap."""
+    _git("config", "--global", "user.email", "hermes-backup@railway.app")
+    _git("config", "--global", "user.name", "Hermes Backup")
+    # Default branch name for new `git init` calls — avoids master/main mismatch
+    # with GitHub repos (which default to main since 2020).
+    _git("config", "--global", "init.defaultBranch", "main")
+
+
 def bootstrap(token: str, repo_name: str) -> bool:
     """Create GitHub repo, configure git remote, do first push. Returns True on success."""
     print(f"[backup] bootstrapping backup → {repo_name}", flush=True)
@@ -142,7 +151,8 @@ def bootstrap(token: str, repo_name: str) -> bool:
             "name": name,
             "private": True,
             "description": "Hermes agent workspace backup (auto-created by hermes-agent-template)",
-            "auto_init": True,
+            # auto_init omitted — empty repo avoids a conflicting "Initial commit"
+            # that would cause subsequent plain `git push` calls to be rejected.
         })
         if not created:
             print("[backup] ERROR: could not create GitHub repo", flush=True)
@@ -156,9 +166,6 @@ def bootstrap(token: str, repo_name: str) -> bool:
     gitignore = HERMES_HOME / ".gitignore"
     if not gitignore.exists():
         gitignore.write_text(_GITIGNORE)
-
-    _git("config", "--global", "user.email", "hermes-backup@railway.app")
-    _git("config", "--global", "user.name", "Hermes Backup")
 
     if not (HERMES_HOME / ".git").exists():
         _git_ok("init")
@@ -259,6 +266,11 @@ def verify(token: str) -> None:
 
 
 def main() -> None:
+    # Apply git identity on every boot — ~/.gitconfig lives in the ephemeral
+    # container layer and is lost on each redeploy, even if HERMES_HOME (the
+    # /data volume) already has BOOTSTRAP_MARKER from a previous run.
+    _configure_git()
+
     token = _env("BACKUP_GITHUB_TOKEN")
     if not token:
         print(

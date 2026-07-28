@@ -51,11 +51,13 @@ fi
 # scripts are added in a template upgrade). Preserves user edits: an existing
 # script is only overwritten when it byte-matches a superseded bundled version
 # listed below — meaning the user never edited it, so upgrading is safe.
-# (hashes: hermes-auto-update.sh as of 5731fd5 and e4d74c1, both of which
-# no-op'd on Docker deployments — serviceInstanceRedeploy never rebuilds.)
+# (hashes: hermes-auto-update.sh as of 5731fd5 and e4d74c1 — both no-op'd on
+# Docker deployments, serviceInstanceRedeploy never rebuilds — and as of
+# 0d4be20, which relied on the auto-deploy webhook after the bump push.)
 _superseded_script_hashes="
 673a86e1cd7ffe2760fa9ebb1bce766e2ea183335e7e7c17ea20e1faaaa6b124
 0a0a2a81d1329e08bec4af1f368317afa7eb4e72145110cfe311a3a82ed7d0c4
+0bed4d8f72de3dae10846330c57f9aca09ebbb78a5b75b00afba606269b95199
 "
 if [ -d /app/scripts ]; then
   for _script in /app/scripts/*.sh; do

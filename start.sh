@@ -48,12 +48,23 @@ if [ ! -f "${CONFIG_FILE}" ] && [ -f /opt/hermes-agent/cli-config.yaml.example ]
 fi
 
 # Seed bundled scripts to the persistent volume on first boot (or when new
-# scripts are added in a template upgrade). Preserves user edits: a script
-# is only copied if it doesn't already exist at the destination.
+# scripts are added in a template upgrade). Preserves user edits: an existing
+# script is only overwritten when it byte-matches a superseded bundled version
+# listed below — meaning the user never edited it, so upgrading is safe.
+# (hashes: hermes-auto-update.sh as of 5731fd5 and e4d74c1, both of which
+# no-op'd on Docker deployments — serviceInstanceRedeploy never rebuilds.)
+_superseded_script_hashes="
+673a86e1cd7ffe2760fa9ebb1bce766e2ea183335e7e7c17ea20e1faaaa6b124
+0a0a2a81d1329e08bec4af1f368317afa7eb4e72145110cfe311a3a82ed7d0c4
+"
 if [ -d /app/scripts ]; then
   for _script in /app/scripts/*.sh; do
     _dest="${HERMES_HOME}/scripts/$(basename "${_script}")"
     if [ ! -f "${_dest}" ]; then
+      cp "${_script}" "${_dest}"
+      chmod +x "${_dest}"
+    elif printf '%s' "${_superseded_script_hashes}" \
+        | grep -qx "$(sha256sum "${_dest}" | cut -d' ' -f1)"; then
       cp "${_script}" "${_dest}"
       chmod +x "${_dest}"
     fi
@@ -103,11 +114,12 @@ if [ -n "${GBRAIN_DATABASE_URL:-}" ]; then
   fi
 fi
 
-# Start the GitHub workspace backup daemon. Backs up skills, memories, config,
-# and hooks to a private GitHub repo hourly. Required — BACKUP_GITHUB_TOKEN
-# must be set. Runs independently of server.py so a backup error never takes
-# down the gateway.
+# Start the backup bootstrap + watchdog. Creates the private GitHub backup
+# repo on first boot and alerts via Telegram if backups go stale. The actual
+# hourly mirroring/pushing is owned by the agent's github-backup skill.
+# Required — BACKUP_GITHUB_TOKEN must be set. Runs independently of server.py
+# so a backup error never takes down the gateway.
 python /app/backup.py >>"${HERMES_HOME}/logs/backup.log" 2>&1 &
-echo "[startup] backup daemon started (pid $!)" >&2
+echo "[startup] backup watchdog started (pid $!)" >&2
 
 exec python /app/server.py

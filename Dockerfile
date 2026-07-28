@@ -9,6 +9,9 @@ FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 # `v2026.5.29.2`) and update the default below. Use `main` only if you accept
 # that every rebuild can pull arbitrary new upstream commits.
 ARG HERMES_REF=v2026.6.5
+# Expose the baked ref to the runtime so scripts/hermes-auto-update.sh can
+# compare the running image against upstream releases without guessing.
+ENV HERMES_BAKED_REF=${HERMES_REF}
 ARG GBRAIN_REF=1eb430a
 
 # tini = tiny init that we run as PID 1. Without it, hermes's grandchild

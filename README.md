@@ -133,9 +133,9 @@ The startup script also clears stale `gateway.pid` files for both the default pr
 | `ZEROENTROPY_API_KEY` | *(empty)* | Optional/recommended embedding provider key for GBrain. |
 | `GITHUB_TOKEN` | *(empty)* | Optional GitHub token for private repo access and higher API limits. |
 | `HERMES_REF` | *(pinned in Dockerfile)* | Hermes Agent version to install (any upstream git tag/branch). Set this Railway variable to override the Dockerfile default without editing code — see [Updating Hermes](#updating-hermes). |
-| `BACKUP_GITHUB_TOKEN` | *(required)* | GitHub token (repo scope) for hourly workspace backups. The backup repo is created automatically on first boot; secrets are excluded via `.gitignore` and never committed. |
+| `BACKUP_GITHUB_TOKEN` | *(required)* | GitHub token (repo scope) for workspace backups. The private backup repo is created automatically on first boot; hourly mirroring and pushing is handled by the agent's [github-backup skill](https://github.com/pgill/agentsforus-skills). |
 | `BACKUP_REPO` | `<user>/hermes-backup` | Target repo for workspace backups (`owner/name`). Created as private if absent. |
-| `BACKUP_TELEGRAM_CHAT_ID` | *(empty)* | Optional Telegram chat ID for stale-backup alerts (>25h without a successful push). Requires `TELEGRAM_BOT_TOKEN` in the gateway env. |
+| `BACKUP_TELEGRAM_CHAT_ID` | *(empty)* | Optional Telegram chat ID for stale-backup alerts (>25h without a successful backup, or same-day if none has ever run). Requires `TELEGRAM_BOT_TOKEN` in the gateway env. |
 
 The default profile's LLM provider, model, channels, and tools are managed through the admin dashboard or Railway Variables. On every boot, selected Railway Variables are written into `/data/.hermes/.env`; values removed from Railway are removed from the generated section, while manual/dashboard-only values are preserved. Additional Hermes profiles keep their own `.env`, `config.yaml`, memory, skills, and gateway state under `/data/.hermes/profiles/<name>/`.
 
@@ -169,12 +169,14 @@ The admin server runs on `$PORT` and manages the Hermes gateway fleet as child p
 
 ## Updating Hermes
 
-This template pins a specific Hermes Agent release in the `Dockerfile` (`ARG HERMES_REF`, currently `v2026.6.5`). To upgrade:
+This template pins a specific Hermes Agent release in the `Dockerfile` (`ARG HERMES_REF`). To upgrade:
 
-- **Recommended:** set a `HERMES_REF` service variable in Railway to any upstream [release tag](https://github.com/NousResearch/hermes-agent/releases) (e.g. `v2026.6.6`), then redeploy. It's passed as a Docker build arg and overrides the Dockerfile default — no code change needed.
-- **Or** bump `ARG HERMES_REF` in the `Dockerfile` and redeploy.
+- **Recommended — auto-updates:** register the bundled weekly cron by telling your agent: *"Register scripts/hermes-auto-update.sh to run every Sunday at 3am my time, so you keep yourself up to date."* It compares the deploy repo's `HERMES_REF` pin against the running image and triggers a Railway rebuild when the pin advances (requires `RAILWAY_TOKEN`). On the deploy repo owner's instance, setting `HERMES_UPDATE_GITHUB_TOKEN` additionally lets the cron push the `HERMES_REF` bump itself when [upstream](https://github.com/NousResearch/hermes-agent/releases) publishes a new release.
+- **Manual:** bump `ARG HERMES_REF` in the `Dockerfile` and push — the push triggers Railway's rebuild. A plain **redeploy does not rebuild**; it restarts the existing image with the old Hermes baked in.
 
-The "Update" button inside the Hermes dashboard is a **no-op on Railway** (it detects a container install and refuses). The image is immutable — bump `HERMES_REF` and redeploy instead. When jumping releases, re-check that the Dockerfile's install extras still match upstream's `pyproject.toml`.
+Avoid setting `HERMES_REF` as a Railway service variable: it overrides the Dockerfile default as a build arg, which silently pins you and defeats auto-updates.
+
+The "Update" button inside the Hermes dashboard is a **no-op on Railway** (it detects a container install and refuses). The image is immutable — a new image only comes from a rebuild. When jumping releases, re-check that the Dockerfile's install extras still match upstream's `pyproject.toml` (a mismatch fails the Railway build and the weekly cron will keep flagging the stale version until fixed).
 
 ## Running Locally
 

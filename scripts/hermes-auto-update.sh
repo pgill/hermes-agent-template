@@ -11,10 +11,11 @@
 # arrive automatically after that owner-side bump lands.
 #
 # Repo-owner deployments can also push those ARG HERMES_REF bumps themselves:
-# set HERMES_UPDATE_GITHUB_TOKEN with write access to the deploy repo. Railway
-# then builds normally from the GitHub change. If a repo pin already changed but
-# the running image is stale, this script can trigger a Railway
-# serviceInstanceDeployV2 build of the latest commit.
+# set HERMES_UPDATE_GITHUB_TOKEN with write access to the deploy repo. When
+# RAILWAY_TOKEN is set, the cron pushes the bump and then triggers the Railway
+# build itself. If a repo pin already changed but the running image is stale,
+# this script can trigger a Railway serviceInstanceDeployV2 build of the latest
+# commit.
 #
 # It does not grep `hermes --version` for "Update available": that signal is
 # suppressed for Docker installs in current Hermes and was phantom/stale in
@@ -42,6 +43,7 @@ LATEST_TAG=""
 RUNNING_REF=""
 DOCKERFILE_SHA=""
 REPO_REF=""
+BUMP_COMMIT_SHA=""
 
 cleanup() {
     rm -f "$LATEST_RESPONSE" "$DOCKERFILE_RESPONSE" "$DOCKERFILE_CONTENT" \
@@ -295,6 +297,25 @@ PY
         echo "⚠️ Hermes update available but Dockerfile bump failed (HTTP $http_code)."
         exit 1
     fi
+
+    if ! BUMP_COMMIT_SHA=$(python3 - "$GITHUB_PUT_RESPONSE" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as handle:
+    data = json.load(handle)
+
+commit = data.get("commit")
+sha = commit.get("sha") if isinstance(commit, dict) else None
+if not isinstance(sha, str):
+    raise SystemExit(1)
+
+print(sha)
+PY
+    )
+    then
+        BUMP_COMMIT_SHA=""
+    fi
 }
 
 require_railway_inputs() {
@@ -315,27 +336,33 @@ require_railway_inputs() {
     fi
 }
 
+railway_inputs_present() {
+    [ -n "${RAILWAY_TOKEN:-}" ] && [ -n "${RAILWAY_SERVICE_ID:-}" ] && [ -n "${RAILWAY_ENVIRONMENT_ID:-}" ]
+}
+
 trigger_railway_build() {
+    local commit_sha="${1:-}"
     local http_code
     local payload_file
 
     require_railway_inputs
 
     payload_file="${TMP_BASE}.railway-payload.json"
-    python3 - "$payload_file" "$RAILWAY_SERVICE_ID" "$RAILWAY_ENVIRONMENT_ID" <<'PY'
+    python3 - "$payload_file" "$RAILWAY_SERVICE_ID" "$RAILWAY_ENVIRONMENT_ID" "$commit_sha" <<'PY'
 import json
 import sys
 
-payload_path, service_id, environment_id = sys.argv[1:4]
+payload_path, service_id, environment_id, commit_sha = sys.argv[1:5]
 payload = {
     "query": (
-        "mutation($serviceId: String!, $environmentId: String!) { "
-        "serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) "
+        "mutation($serviceId: String!, $environmentId: String!, $commitSha: String) { "
+        "serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId, commitSha: $commitSha) "
         "}"
     ),
     "variables": {
         "serviceId": service_id,
         "environmentId": environment_id,
+        "commitSha": commit_sha or None,
     },
 }
 
@@ -401,7 +428,17 @@ if [[ "$REPO_REF" =~ ^v[0-9.]+$ ]]; then
 
     if [ "$TAG_COMPARE" -eq 0 ]; then
         push_dockerfile_bump "$LATEST_TAG" "$DOCKERFILE_SHA"
-        echo "🔄 Hermes ${RUNNING_REF:-unknown} → ${LATEST_TAG}: pushed Dockerfile bump to ${RAILWAY_GIT_REPO_OWNER}/${RAILWAY_GIT_REPO_NAME}@${BRANCH}. Railway is building the new image now; your agent restarts on the new version in ~10 minutes. Next weekly check verifies it took."
+        echo "🔄 Hermes ${RUNNING_REF:-unknown} → ${LATEST_TAG}: pushed Dockerfile bump to ${RAILWAY_GIT_REPO_OWNER}/${RAILWAY_GIT_REPO_NAME}@${BRANCH}."
+        if railway_inputs_present; then
+            trigger_railway_build "$BUMP_COMMIT_SHA"
+            if [ -n "$BUMP_COMMIT_SHA" ]; then
+                echo "🔄 Triggered Railway build for commit ${BUMP_COMMIT_SHA:0:7}; back online on the new version in ~10 minutes. Next weekly check verifies it took."
+            else
+                echo "🔄 Triggered Railway build of the pushed commit; back online on the new version in ~10 minutes. Next weekly check verifies it took."
+            fi
+        else
+            echo "🔄 Railway build now depends on Railway's auto-deploy webhook. If the service has not rebuilt in ~10 minutes, check the service's deploy trigger in Railway or set RAILWAY_TOKEN so this cron can trigger builds directly."
+        fi
         exit 0
     fi
 

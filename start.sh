@@ -124,4 +124,7 @@ fi
 python /app/backup.py >>"${HERMES_HOME}/logs/backup.log" 2>&1 &
 echo "[startup] backup watchdog started (pid $!)" >&2
 
-exec python /app/server.py
+# Run under tini because this process is PID 1 on Railway. Without an init
+# reaper, orphaned Bun/bash grandchildren accumulate as zombies until the
+# cgroup PID limit is exhausted, causing GBrain imports to abort with SIGABRT.
+exec /usr/bin/tini -g -- python /app/server.py

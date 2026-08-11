@@ -38,6 +38,7 @@ import time
 from collections import deque
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 import httpx
 import websockets
@@ -103,6 +104,7 @@ else:
 # (key, label, category, is_secret)
 ENV_VARS = [
     ("LLM_MODEL",               "Model",                    "model",     False),
+    ("LLM_PROVIDER",            "Provider",                 "model",     False),
     ("OPENROUTER_API_KEY",       "OpenRouter",               "provider",  True),
     ("DEEPSEEK_API_KEY",         "DeepSeek",                 "provider",  True),
     ("DASHSCOPE_API_KEY",        "Qwen Cloud (DashScope)",   "provider",  True),
@@ -238,26 +240,35 @@ def write_config_yaml(data: dict[str, str]) -> None:
             # Treat unparseable as absent — we'll overwrite with template defaults.
             existing = {}
 
-    merged = dict(existing)
+    merged: dict[str, Any] = dict(existing)
 
-    # Deployment-managed (always authoritative — these reflect the runtime env).
-    merged_model = dict(merged.get("model") if isinstance(merged.get("model"), dict) else {})
-    merged_model["default"] = model
+    # Deployment-managed when explicitly supplied by the setup UI/runtime.
+    raw_model = merged.get("model")
+    merged_model: dict[str, Any] = raw_model.copy() if isinstance(raw_model, dict) else {}
+    if model:
+        merged_model["default"] = model
+    explicit_provider = data.get("LLM_PROVIDER", "").strip()
+    if explicit_provider:
+        merged_model["provider"] = explicit_provider
     # Only force provider="auto" when a known API key is configured. If no
     # API key is set, the user likely configured an OAuth provider (xai-oauth,
     # qwen-oauth, etc.) via the dashboard's model picker — preserve that value
     # so a container restart doesn't revert it to "auto" and break their session.
-    if any(data.get(k) for k in PROVIDER_KEYS):
+    elif any(data.get(k) for k in PROVIDER_KEYS):
         merged_model["provider"] = "auto"
     merged["model"] = merged_model
 
-    merged_terminal = dict(merged.get("terminal") if isinstance(merged.get("terminal"), dict) else {})
+    raw_terminal = merged.get("terminal")
+    merged_terminal: dict[str, Any] = (
+        raw_terminal.copy() if isinstance(raw_terminal, dict) else {}
+    )
     merged_terminal["backend"] = "local"
     merged_terminal["timeout"] = 60
     merged_terminal["cwd"] = "/tmp"
     merged["terminal"] = merged_terminal
 
-    merged_agent = dict(merged.get("agent") if isinstance(merged.get("agent"), dict) else {})
+    raw_agent = merged.get("agent")
+    merged_agent: dict[str, Any] = raw_agent.copy() if isinstance(raw_agent, dict) else {}
     merged_agent.setdefault("max_iterations", 50)
     merged["agent"] = merged_agent
 
@@ -1010,10 +1021,10 @@ class Gateway:
             provider_key = next((env.get(k, "") for k in PROVIDER_KEYS if env.get(k)), "")
             self._log(f"model={model or '⚠ NOT SET'} | provider_key={'set' if provider_key else '⚠ NOT SET'}")
 
-            # The admin UI owns only the default profile's .env/config. Named
-            # profiles keep their own config.yaml and .env under profiles/<name>.
-            if self.profile is None:
-                write_config_yaml(read_env(ENV_FILE))
+            # Do not rewrite config here. Gateway starts/restarts are lifecycle
+            # operations, not configuration changes. The setup API writes config
+            # when the user saves it, and boot_model_guard.py reconciles fleet
+            # routing before startup (including active Codex fallback state).
 
             self.proc = await asyncio.create_subprocess_exec(
                 *self._command(),

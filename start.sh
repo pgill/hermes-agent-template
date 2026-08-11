@@ -47,6 +47,12 @@ if [ ! -f "${CONFIG_FILE}" ] && [ -f /opt/hermes-agent/cli-config.yaml.example ]
   cp /opt/hermes-agent/cli-config.yaml.example "${CONFIG_FILE}"
 fi
 
+# Reconcile every profile's model route before any gateway starts. This keeps
+# Railway restarts from restoring a stale dashboard/.env model. The guard also
+# honors the Codex watchdog's active fallback state, so a restart during a 429
+# window does not prematurely switch profiles back to Codex.
+python /app/boot_model_guard.py
+
 # Seed bundled scripts to the persistent volume on first boot (or when new
 # scripts are added in a template upgrade). Preserves user edits: an existing
 # script is only overwritten when it byte-matches a superseded bundled version

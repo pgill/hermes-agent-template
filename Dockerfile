@@ -84,6 +84,7 @@ COPY server.py /app/server.py
 COPY sync_railway_env.py /app/sync_railway_env.py
 COPY gbrain_bootstrap.py /app/gbrain_bootstrap.py
 COPY backup.py /app/backup.py
+COPY boot_model_guard.py /app/boot_model_guard.py
 COPY templates/ /app/templates/
 COPY scripts/ /app/scripts/
 COPY start.sh /app/start.sh

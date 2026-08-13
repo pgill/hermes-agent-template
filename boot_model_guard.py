@@ -4,6 +4,10 @@
 The Codex rate-limit watchdog owns temporary fallback state. On normal boots,
 all profiles are pinned to the configured primary. If Railway restarts during
 an active rate-limit window, all profiles stay on the configured fallback.
+
+Deployments that don't use the Codex watchdog are left untouched: unless the
+watchdog has written state or a CODEX_WATCHDOG_* variable is set, the guard
+is a no-op, so it never overwrites a user's chosen model with Codex defaults.
 """
 
 from __future__ import annotations
@@ -25,14 +29,21 @@ FALLBACK_MODEL = os.environ.get(
 FALLBACK_PROVIDER = os.environ.get("CODEX_WATCHDOG_FALLBACK_PROVIDER", "openrouter")
 
 
-def desired_route(root: Path) -> tuple[str, str, str]:
+def desired_route(root: Path) -> tuple[str, str, str] | None:
+    """Return (model, provider, mode) to enforce, or None to leave configs alone."""
     state_path = root / "cache" / "codex_ratelimit_watchdog_state.json"
     try:
         state = json.loads(state_path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
+    except FileNotFoundError:
+        state = None
+    except (json.JSONDecodeError, OSError):
         state = {}
 
-    if state.get("mode") == "fallback":
+    watchdog_configured = any(k.startswith("CODEX_WATCHDOG_") for k in os.environ)
+    if state is None and not watchdog_configured:
+        return None
+
+    if isinstance(state, dict) and state.get("mode") == "fallback":
         return FALLBACK_MODEL, FALLBACK_PROVIDER, "fallback"
     return PRIMARY_MODEL, PRIMARY_PROVIDER, "primary"
 
@@ -76,8 +87,11 @@ def atomic_write_yaml(path: Path, data: dict[str, Any]) -> None:
             pass
 
 
-def reconcile(root: Path, *, dry_run: bool = False) -> tuple[str, list[str]]:
-    model, provider, mode = desired_route(root)
+def reconcile(root: Path, *, dry_run: bool = False) -> tuple[str | None, list[str]]:
+    route = desired_route(root)
+    if route is None:
+        return None, []
+    model, provider, mode = route
     changed: list[str] = []
 
     for profile, config_path in profile_configs(root):
@@ -119,6 +133,13 @@ def main() -> int:
     except RuntimeError as exc:
         print(f"[startup] ERROR: model guard failed: {exc}", flush=True)
         return 1
+
+    if mode is None:
+        print(
+            "[startup] model guard skipped: Codex watchdog not in use",
+            flush=True,
+        )
+        return 0
 
     action = "would reconcile" if args.dry_run else "reconciled"
     if changed:

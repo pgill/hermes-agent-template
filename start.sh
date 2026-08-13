@@ -50,8 +50,15 @@ fi
 # Reconcile every profile's model route before any gateway starts. This keeps
 # Railway restarts from restoring a stale dashboard/.env model. The guard also
 # honors the Codex watchdog's active fallback state, so a restart during a 429
-# window does not prematurely switch profiles back to Codex.
-python /app/boot_model_guard.py
+# window does not prematurely switch profiles back to Codex. No-op on
+# deployments that don't use the Codex watchdog, and never fatal: routing
+# reconciliation must not take the whole container down with it.
+_model_guard="/app/boot_model_guard.py"
+[ -f "${_model_guard}" ] || _model_guard="$(dirname "$0")/boot_model_guard.py"
+if [ -f "${_model_guard}" ]; then
+  python "${_model_guard}" || \
+    echo "[startup] WARNING: model guard failed; continuing boot" >&2
+fi
 
 # Seed bundled scripts to the persistent volume on first boot (or when new
 # scripts are added in a template upgrade). Preserves user edits: an existing

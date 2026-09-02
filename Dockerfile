@@ -43,7 +43,27 @@ RUN apt-get update && \
 # and bricks the session on Anthropic's non-retryable 400. We bake it in.
 # When bumping HERMES_REF, re-check hermes-agent's pyproject.toml [all] and
 # the extras below against the new release's pyproject.toml.
-RUN git clone --depth 1 --branch ${HERMES_REF} https://github.com/NousResearch/hermes-agent.git /opt/hermes-agent && \
+#
+# Source is fetched as a release tarball via codeload.github.com rather than
+# `git clone`. Railway's build hosts share egress IPs, and GitHub intermittently
+# answers anonymous git-over-HTTPS clones from them with a 401 ("could not read
+# Username for 'https://github.com'" / "expected flush after ref listing"),
+# which killed whole image builds for users. The archive endpoint skips the git
+# smart-protocol handshake and is far less prone to that, and we retry with
+# backoff for anything transient that remains. Works for tags, branches, and
+# SHAs alike. Nothing downstream needs a .git dir (upstream uses plain
+# setuptools, no SCM versioning; we stripped .git after install anyway).
+RUN mkdir -p /opt/hermes-agent && \
+    for i in 1 2 3 4 5; do \
+      if curl -fsSL --connect-timeout 20 --max-time 300 -o /tmp/hermes-agent.tgz \
+           "https://github.com/NousResearch/hermes-agent/archive/${HERMES_REF}.tar.gz" && \
+         tar -xzf /tmp/hermes-agent.tgz --strip-components=1 -C /opt/hermes-agent; then break; fi; \
+      echo "hermes-agent ${HERMES_REF} download attempt ${i}/5 failed; retrying..." >&2; \
+      rm -rf /tmp/hermes-agent.tgz /opt/hermes-agent; mkdir -p /opt/hermes-agent; \
+      sleep $((i * 10)); \
+    done && \
+    rm -f /tmp/hermes-agent.tgz && \
+    test -f /opt/hermes-agent/pyproject.toml && \
     cd /opt/hermes-agent && \
     uv pip install --system --no-cache -e ".[all,messaging,tts-premium,honcho,bedrock,anthropic,edge-tts,hindsight,vision]" && \
     cd /opt/hermes-agent/web && \
@@ -52,7 +72,7 @@ RUN git clone --depth 1 --branch ${HERMES_REF} https://github.com/NousResearch/h
     cd /opt/hermes-agent/ui-tui && \
     npm install --silent --no-fund --no-audit --progress=false && \
     npm run build && \
-    rm -rf /opt/hermes-agent/web /opt/hermes-agent/.git /root/.npm
+    rm -rf /opt/hermes-agent/web /root/.npm
 
 # Install Bun + GBrain into the immutable image. Do not rely on a previous
 # Railway volume having a Bun global install: fresh deploys and restored

@@ -15,7 +15,7 @@ mkdir -p "${HERMES_HOME}"/cron "${HERMES_HOME}"/sessions "${HERMES_HOME}"/logs \
 # Stamp the install method as "docker" so hermes treats this as an immutable
 # container image, not a pip checkout. hermes's detect_install_method() reads
 # $HERMES_HOME/.install_method FIRST. Without this stamp the template falls
-# through to "pip" (the Dockerfile strips /opt/hermes-agent/.git) and the
+# through to "pip" (/opt/hermes-agent is a tarball, not a git checkout) and the
 # dashboard's "Update Hermes" button runs a real pip-upgrade inside the running
 # container — ephemeral and desyncs Python package from pre-built UI bundles.
 # Stamped unconditionally each boot so it stays correct and self-heals.

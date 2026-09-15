@@ -1017,13 +1017,16 @@ class Gateway:
             # so `hermes -p <profile>` resolves ~/.hermes/profiles/<name>.
             env = {**os.environ, "HERMES_HOME": HERMES_HOME}
             env.update(read_env(self.env_file))
-            # NumPy/OpenBLAS may otherwise allocate one worker per visible CPU
-            # in every gateway. Across a multi-profile fleet that exhausts the
-            # container PID/thread limit and prevents cron scripts from forking.
-            env.setdefault("OPENBLAS_NUM_THREADS", "1")
-            env.setdefault("OMP_NUM_THREADS", "1")
-            env.setdefault("MKL_NUM_THREADS", "1")
-            env.setdefault("NUMEXPR_NUM_THREADS", "1")
+            # NumPy/OpenBLAS may allocate one worker per visible CPU in every
+            # gateway. Auto-cap only large fleets; ordinary users retain normal
+            # parallel math performance. Any deployment can opt in or tune the
+            # cap explicitly with HERMES_GATEWAY_BLAS_THREADS.
+            blas_threads = env.get("HERMES_GATEWAY_BLAS_THREADS")
+            if blas_threads is None and len(configured_managed_profiles()) >= 8:
+                blas_threads = "1"
+            if blas_threads:
+                for key in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
+                    env.setdefault(key, blas_threads)
             model = env.get("LLM_MODEL", "")
             provider_key = next((env.get(k, "") for k in PROVIDER_KEYS if env.get(k)), "")
             self._log(f"model={model or '⚠ NOT SET'} | provider_key={'set' if provider_key else '⚠ NOT SET'}")

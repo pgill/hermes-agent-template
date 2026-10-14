@@ -84,12 +84,6 @@ GBRAIN_MCP_HOST = "127.0.0.1"
 GBRAIN_MCP_PORT = int(os.environ.get("GBRAIN_HTTP_PORT", "3001"))
 GBRAIN_MCP_URL = f"http://{GBRAIN_MCP_HOST}:{GBRAIN_MCP_PORT}"
 
-# Generic Hermes webhook listener. It stays on loopback; selected HMAC-protected
-# profile routes are exposed through the Railway app below.
-HERMES_WEBHOOK_HOST = "127.0.0.1"
-HERMES_WEBHOOK_PORT = int(os.environ.get("WEBHOOK_PORT", "8644"))
-HERMES_WEBHOOK_URL = f"http://{HERMES_WEBHOOK_HOST}:{HERMES_WEBHOOK_PORT}"
-
 # Mirror dashboard-ref-only/auth_proxy.py: strip only `host` (httpx sets it)
 # and `transfer-encoding` (httpx recomputes it from the body). Keep everything
 # else — notably `authorization`, because the SPA uses Bearer tokens against
@@ -828,9 +822,8 @@ def guard(request: Request) -> Response | None:
     - HTML navigation: 302 to /login?returnTo=<path>
     - API / XHR: 401 JSON (so the SPA's fetch() can surface it cleanly)
 
-    GBrain MCP/OAuth routes and HMAC-authenticated Hermes webhook routes are
-    intentionally exempt so public clients can reach their loopback upstreams
-    without the Hermes admin cookie.
+    GBrain MCP/OAuth routes are intentionally exempt so public clients can
+    reach the loopback-proxied server without the Hermes admin cookie.
     """
     public_passthrough = {
         "/mcp",
@@ -840,11 +833,7 @@ def guard(request: Request) -> Response | None:
         "/revoke",
         "/.well-known/oauth-authorization-server",
     }
-    webhook_passthrough = re.fullmatch(
-        r"/p/[a-z0-9][a-z0-9_-]*/webhooks/[a-z0-9][a-z0-9_-]*",
-        request.url.path,
-    ) is not None
-    if request.url.path in public_passthrough or webhook_passthrough:
+    if request.url.path in public_passthrough:
         return None
     if _is_authenticated(request):
         return None
@@ -1675,48 +1664,6 @@ async def _proxy_to_gbrain(request: Request) -> Response:
     return Response(content=content, status_code=upstream.status_code, headers=resp_headers)
 
 
-async def _proxy_to_webhook(request: Request) -> Response:
-    """Forward a public profile webhook POST to the loopback Hermes listener.
-
-    Authentication remains the webhook adapter's responsibility: it validates
-    the route-specific HMAC before dispatching an agent run.
-    """
-    client = get_http_client()
-    target = f"{HERMES_WEBHOOK_URL}{request.url.path}"
-    if request.url.query:
-        target = f"{target}?{request.url.query}"
-
-    req_headers = {
-        k: v for k, v in request.headers.items()
-        if k.lower() not in HOP_BY_HOP
-    }
-    body = await request.body()
-
-    try:
-        upstream = await client.request(
-            request.method,
-            target,
-            headers=req_headers,
-            content=body,
-        )
-    except (httpx.ConnectError, httpx.ConnectTimeout):
-        return JSONResponse({"error": "webhook_unavailable"}, status_code=503)
-    except httpx.RequestError as e:
-        print(f"[proxy] webhook upstream error for {request.method} {request.url.path}: {e}", flush=True)
-        return JSONResponse({"error": "webhook_unavailable"}, status_code=502)
-
-    resp_headers = {
-        k: v for k, v in upstream.headers.items()
-        if k.lower() not in HOP_BY_HOP
-        and k.lower() not in ("content-encoding", "content-length")
-    }
-    return Response(
-        content=upstream.content,
-        status_code=upstream.status_code,
-        headers=resp_headers,
-    )
-
-
 async def route_root(request: Request) -> Response:
     """GET /: first-visit smart redirect, otherwise proxy to the dashboard.
 
@@ -1963,11 +1910,6 @@ routes = [
     Route("/.well-known/oauth-authorization-server", _proxy_to_gbrain, methods=ANY_METHOD),
     Route("/register",                          _proxy_to_gbrain,     methods=ANY_METHOD),
     Route("/revoke",                            _proxy_to_gbrain,     methods=ANY_METHOD),
-
-    # Public, profile-bound Hermes webhooks. The upstream adapter requires a
-    # route-specific HMAC and handles rate limiting, replay protection and
-    # idempotency before it starts the target profile.
-    Route("/p/{profile}/webhooks/{route_name}", _proxy_to_webhook,   methods=["POST"]),
 
     # /setup/* typos return a real 404 — not a silent proxy fallthrough.
     Route("/setup/{path:path}",                 route_setup_404,     methods=ANY_METHOD),

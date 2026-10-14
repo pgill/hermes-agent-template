@@ -840,8 +840,8 @@ def guard(request: Request) -> Response | None:
         "/revoke",
         "/.well-known/oauth-authorization-server",
     }
-    webhook_passthrough = request.method == "POST" and re.fullmatch(
-        r"(?:/p/[a-z0-9][a-z0-9_-]*)?/webhooks/[a-z0-9][a-z0-9_-]*",
+    webhook_passthrough = re.fullmatch(
+        r"/p/[a-z0-9][a-z0-9_-]*/webhooks/[a-z0-9][a-z0-9_-]*",
         request.url.path,
     ) is not None
     if request.url.path in public_passthrough or webhook_passthrough:
@@ -1967,7 +1967,6 @@ routes = [
     # Public, profile-bound Hermes webhooks. The upstream adapter requires a
     # route-specific HMAC and handles rate limiting, replay protection and
     # idempotency before it starts the target profile.
-    Route("/webhooks/{route_name}",             _proxy_to_webhook,   methods=["POST"]),
     Route("/p/{profile}/webhooks/{route_name}", _proxy_to_webhook,   methods=["POST"]),
 
     # /setup/* typos return a real 404 — not a silent proxy fallthrough.

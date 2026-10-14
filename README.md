@@ -127,6 +127,7 @@ The startup script also clears stale `gateway.pid` files for both the default pr
 | `HERMES_MANAGED_PROFILES` | *(empty)* | Optional comma-separated profile gateways to supervise in addition to `default`, e.g. `documenter,finance`. Also accepts `all` for discovery or JSON. |
 | `HERMES_AUTO_START_PROFILES` | `false` | If `true`, auto-discover every profile under `/data/.hermes/profiles/` that has a messaging channel configured. |
 | `HERMES_MANAGED_PROFILES_FILE` | `/data/.hermes/managed-profiles.json` | Optional JSON config file on the persistent volume for managed profile gateways. |
+| `HERMES_PUBLIC_WEBHOOK_PROXY_ENABLED` | `false` | Opt in to a POST-only public reverse proxy for Hermes generic webhooks at `/webhooks/<route>` and `/p/<profile>/webhooks/<route>`. The Hermes listener must remain loopback-only and every route must use its own HMAC secret. |
 | `GBRAIN_SUPABASE_URL` | *(empty)* | Optional GBrain Supabase/Postgres connection URL. Prefer Supabase **Transaction Pooler** URL on port `6543`; the startup bridge also writes it as `GBRAIN_DATABASE_URL` so GBrain uses Postgres instead of local PGLite. |
 | `GBRAIN_DATABASE_URL` | *(derived from `GBRAIN_SUPABASE_URL`)* | Canonical GBrain database URL override. Set directly only if you do not want to use `GBRAIN_SUPABASE_URL`. |
 | `GBRAIN_DIRECT_DATABASE_URL` | *(empty)* | Optional direct/session-pooler URL for GBrain migrations, DDL, and worker locks. Use Supabase **Session Pooler** URL on port `5432` if the host cannot reach the IPv6-only direct DB hostname. |
